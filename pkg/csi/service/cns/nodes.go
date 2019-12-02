@@ -19,6 +19,7 @@ package cns
 import (
 	"context"
 	"fmt"
+	"sigs.k8s.io/vsphere-csi-driver/pkg/csi/service/common"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	v1 "k8s.io/api/core/v1"
@@ -26,7 +27,6 @@ import (
 
 	cnsnode "sigs.k8s.io/vsphere-csi-driver/pkg/common/cns-lib/node"
 	cnsvsphere "sigs.k8s.io/vsphere-csi-driver/pkg/common/cns-lib/vsphere"
-	"sigs.k8s.io/vsphere-csi-driver/pkg/csi/service/common"
 	csitypes "sigs.k8s.io/vsphere-csi-driver/pkg/csi/types"
 	k8s "sigs.k8s.io/vsphere-csi-driver/pkg/kubernetes"
 )
@@ -48,15 +48,23 @@ func (nodes *Nodes) Initialize() error {
 	}
 	nodes.cnsNodeManager.SetKubernetesClient(k8sclient)
 	nodes.informMgr = k8s.NewInformer(k8sclient)
-	nodes.informMgr.AddNodeListener(nodes.nodeAdd, nil, nodes.nodeDelete)
+	nodes.informMgr.AddNodeListener(nodes.nodeAdd, nodes.nodeUpdate, nodes.nodeDelete)
 	nodes.informMgr.Listen()
 	return nil
 }
 
 func (nodes *Nodes) nodeAdd(obj interface{}) {
+	nodes.nodeRegister(obj)
+}
+
+func (nodes *Nodes) nodeUpdate(oldObj interface{}, newObj interface{}) {
+	nodes.nodeRegister(newObj)
+}
+
+func (nodes *Nodes) nodeRegister(obj interface{}) {
 	node, ok := obj.(*v1.Node)
 	if node == nil || !ok {
-		klog.Warningf("nodeAdd: unrecognized object %+v", obj)
+		klog.Warningf("nodeRegister: unrecognized object %+v", obj)
 		return
 	}
 	err := nodes.cnsNodeManager.RegisterNode(common.GetUUIDFromProviderID(node.Spec.ProviderID), node.Name)

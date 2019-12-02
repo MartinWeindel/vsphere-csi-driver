@@ -17,7 +17,9 @@ limitations under the License.
 package kubernetes
 
 import (
+	"flag"
 	"k8s.io/klog"
+	"os"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
@@ -27,16 +29,35 @@ import (
 	"sigs.k8s.io/vsphere-csi-driver/pkg/csi/service/common"
 )
 
+var kubeconfig *string
+
+func init() {
+	kubeconfig = flag.String("kubeconfig", "", "path to the kubeconfig file")
+}
+
 // NewClient creates a newk8s client based on a service account
 func NewClient() (clientset.Interface, error) {
+	kubecfgPath := os.Getenv(clientcmd.RecommendedConfigPathEnvVar)
+	if *kubeconfig != "" {
+		kubecfgPath = *kubeconfig
+	}
 
 	var config *restclient.Config
 	var err error
-	klog.V(2).Info("k8s client using in-cluster config")
-	config, err = restclient.InClusterConfig()
-	if err != nil {
-		klog.Errorf("InClusterConfig failed %q", err)
-		return nil, err
+	if kubecfgPath != "" {
+		klog.V(2).Infof("k8s client using kubeconfig from %s", kubecfgPath)
+		config, err = clientcmd.BuildConfigFromFlags("", kubecfgPath)
+		if err != nil {
+			klog.Errorf("BuildConfigFromFlags failed %q", err)
+			return nil, err
+		}
+	} else {
+		klog.V(2).Info("k8s client using in-cluster config")
+		config, err = restclient.InClusterConfig()
+		if err != nil {
+			klog.Errorf("InClusterConfig failed %q", err)
+			return nil, err
+		}
 	}
 
 	return clientset.NewForConfig(config)
