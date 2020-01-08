@@ -28,8 +28,10 @@ Please see [CONTRIBUTING.md](CONTRIBUTING.md) for instructions on how to contrib
 - create a release tag on github
 - checkout release
 - `make -e BUILD_RELEASE_TYPE=release images`
-- push images
+- tag & push images
   ```
-  docker push eu.gcr.io/gardener-project/patches/vsphere-csi-driver/driver-...
-  docker push eu.gcr.io/gardener-project/patches/vsphere-csi-driver/syncer-...
+  docker tag eu.gcr.io/gardener-project/patches/vsphere-csi-driver/driver:v1.0.X-y-... eu.gcr.io/gardener-project/patches/vsphere-csi-driver/driver:v1.0.X-gardenerN
+  docker tag eu.gcr.io/gardener-project/patches/vsphere-csi-driver/syncer:v1.0.X-y-... eu.gcr.io/gardener-project/patches/vsphere-csi-driver/syncer:v1.0.X-gardenerN
+  docker push eu.gcr.io/gardener-project/patches/vsphere-csi-driver/driver:v1.0X-gardenerN
+  docker push eu.gcr.io/gardener-project/patches/vsphere-csi-driver/syncer:v1.0X-gardenerN
   ```
