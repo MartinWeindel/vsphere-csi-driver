@@ -23,19 +23,19 @@ set -o nounset
 set -o pipefail
 
 # BASE_REPO is the root path of the image repository
-readonly BASE_IMAGE_REPO=gcr.io/cloud-provider-vsphere
+readonly BASE_IMAGE_REPO=eu.gcr.io/gardener-project/patches/vsphere-csi-driver
 
 # Release images
-readonly CSI_IMAGE_RELEASE=${BASE_IMAGE_REPO}/csi/release/driver
-readonly SYNCER_IMAGE_RELEASE=${BASE_IMAGE_REPO}/csi/release/syncer
+readonly CSI_IMAGE_RELEASE=${BASE_IMAGE_REPO}/driver
+readonly SYNCER_IMAGE_RELEASE=${BASE_IMAGE_REPO}/syncer
 
 # PR images
-readonly CSI_IMAGE_PR=${BASE_IMAGE_REPO}/csi/pr/driver
-readonly SYNCER_IMAGE_PR=${BASE_IMAGE_REPO}/csi/pr/syncer
+readonly CSI_IMAGE_PR=${BASE_IMAGE_REPO}/pr/driver
+readonly SYNCER_IMAGE_PR=${BASE_IMAGE_REPO}/pr/syncer
 
 # CI images
-readonly CSI_IMAGE_CI=${BASE_IMAGE_REPO}/csi/ci/driver
-readonly SYNCER_IMAGE_CI=${BASE_IMAGE_REPO}/csi/ci/syncer
+readonly CSI_IMAGE_CI=${BASE_IMAGE_REPO}/ci/driver
+readonly SYNCER_IMAGE_CI=${BASE_IMAGE_REPO}/ci/syncer
 
 PUSH=
 LATEST=

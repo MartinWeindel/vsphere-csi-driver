@@ -22,3 +22,14 @@ The CSI driver container images are available here:
 ## Contributing
 
 Please see [CONTRIBUTING.md](CONTRIBUTING.md) for instructions on how to contribute.
+
+## Releasing patch version for Gardener
+
+- create a release tag on github
+- checkout release
+- `make -e BUILD_RELEASE_TYPE=release images`
+- push images
+  ```
+  docker push eu.gcr.io/gardener-project/patches/vsphere-csi-driver/driver-...
+  docker push eu.gcr.io/gardener-project/patches/vsphere-csi-driver/syncer-...
+  ```
