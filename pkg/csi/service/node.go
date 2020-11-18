@@ -17,18 +17,15 @@ limitations under the License.
 package service
 
 import (
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/akutz/gofsutil"
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	csictx "github.com/rexray/gocsi/context"
 	cnstypes "github.com/vmware/govmomi/cns/types"
 	"github.com/vmware/govmomi/units"
 	"golang.org/x/net/context"
@@ -43,18 +40,16 @@ import (
 	utilexec "k8s.io/utils/exec"
 	"k8s.io/utils/mount"
 
-	cnsvsphere "sigs.k8s.io/vsphere-csi-driver/pkg/common/cns-lib/vsphere"
-	cnsconfig "sigs.k8s.io/vsphere-csi-driver/pkg/common/config"
 	"sigs.k8s.io/vsphere-csi-driver/pkg/csi/service/common"
 	"sigs.k8s.io/vsphere-csi-driver/pkg/csi/service/common/commonco"
 	"sigs.k8s.io/vsphere-csi-driver/pkg/csi/service/logger"
 	csitypes "sigs.k8s.io/vsphere-csi-driver/pkg/csi/types"
+	k8s "sigs.k8s.io/vsphere-csi-driver/pkg/kubernetes"
 )
 
 const (
 	devDiskID   = "/dev/disk/by-id"
 	blockPrefix = "wwn-0x"
-	dmiDir      = "/sys/class/dmi"
 )
 
 type nodeStageParams struct {
@@ -634,86 +629,19 @@ func (s *service) NodeGetInfo(
 			AccessibleTopology: &csi.Topology{},
 		}, nil
 	}
-	var cfg *cnsconfig.Config
-	cfgPath = csictx.Getenv(ctx, cnsconfig.EnvVSphereCSIConfig)
-	if cfgPath == "" {
-		cfgPath = cnsconfig.DefaultCloudConfigPath
-	}
-	cfg, err := cnsconfig.GetCnsconfig(ctx, cfgPath)
+
+	topology := &csi.Topology{}
+	log.Infof("Config file provided to node daemonset with zones and regions. Assuming topology aware cluster.")
+	region, zone, err := getTopologyFromK8sNode(ctx, nodeID)
 	if err != nil {
-		if os.IsNotExist(err) {
-			log.Infof("Config file not provided to node daemonset. Assuming non-topology aware cluster.")
-			return &csi.NodeGetInfoResponse{
-				NodeId: nodeID,
-			}, nil
-		}
-		log.Errorf("failed to read cnsconfig. Error: %v", err)
+		log.Errorf("failed to topology from K8sNode. Error: %v", err)
 		return nil, status.Errorf(codes.Internal, err.Error())
 	}
-	var accessibleTopology map[string]string
-	topology := &csi.Topology{}
-
-	if cfg.Labels.Zone != "" && cfg.Labels.Region != "" {
-		log.Infof("Config file provided to node daemonset with zones and regions. Assuming topology aware cluster.")
-		vcenterconfig, err := cnsvsphere.GetVirtualCenterConfig(ctx, cfg)
-		if err != nil {
-			log.Errorf("failed to get VirtualCenterConfig from cns config. err=%v", err)
-			return nil, status.Errorf(codes.Internal, err.Error())
-		}
-		vcManager := cnsvsphere.GetVirtualCenterManager(ctx)
-		vcenter, err := vcManager.RegisterVirtualCenter(ctx, vcenterconfig)
-		if err != nil {
-			log.Errorf("failed to register vcenter with virtualCenterManager.")
-			return nil, status.Errorf(codes.Internal, err.Error())
-		}
-		defer func() {
-			if vcManager != nil {
-				err = vcManager.UnregisterAllVirtualCenters(ctx)
-				if err != nil {
-					log.Errorf("UnregisterAllVirtualCenters failed. err: %v", err)
-				}
-			}
-		}()
-		//Connect to vCenter
-		err = vcenter.Connect(ctx)
-		if err != nil {
-			log.Errorf("failed to connect to vcenter host: %s. err=%v", vcenter.Config.Host, err)
-			return nil, status.Errorf(codes.Internal, err.Error())
-		}
-		// Get VM UUID
-		uuid, err := getSystemUUID(ctx)
-		if err != nil {
-			log.Errorf("failed to get system uuid for node VM")
-			return nil, status.Errorf(codes.Internal, err.Error())
-		}
-		log.Debugf("Successfully retrieved uuid:%s  from the node: %s", uuid, nodeID)
-		nodeVM, err := cnsvsphere.GetVirtualMachineByUUID(ctx, uuid, false)
-		if err != nil || nodeVM == nil {
-			log.Errorf("failed to get nodeVM for uuid: %s. err: %+v", uuid, err)
-			uuid, err = convertUUID(uuid)
-			if err != nil {
-				log.Errorf("convertUUID failed with error: %v", err)
-				return nil, status.Errorf(codes.Internal, err.Error())
-			}
-			nodeVM, err = cnsvsphere.GetVirtualMachineByUUID(ctx, uuid, false)
-			if err != nil || nodeVM == nil {
-				log.Errorf("failed to get nodeVM for uuid: %s. err: %+v", uuid, err)
-				return nil, status.Errorf(codes.Internal, err.Error())
-			}
-		}
-		zone, region, err := nodeVM.GetZoneRegion(ctx, cfg.Labels.Zone, cfg.Labels.Region)
-		if err != nil {
-			log.Errorf("failed to get accessibleTopology for vm: %v, err: %v", nodeVM.Reference(), err)
-			return nil, status.Errorf(codes.Internal, err.Error())
-		}
-		log.Debugf("zone: [%s], region: [%s], Node VM: [%s]", zone, region, nodeID)
-		if zone != "" && region != "" {
-			accessibleTopology = make(map[string]string)
-			accessibleTopology[v1.LabelZoneRegion] = region
-			accessibleTopology[v1.LabelZoneFailureDomain] = zone
-		}
-	}
-	if len(accessibleTopology) > 0 {
+	log.Infof("zone: [%s], region: [%s], Node VM: [%s]", zone, region, nodeID)
+	if zone != "" && region != "" {
+		accessibleTopology := map[string]string{}
+		accessibleTopology[v1.LabelZoneRegion] = region
+		accessibleTopology[v1.LabelZoneFailureDomain] = zone
 		topology.Segments = accessibleTopology
 	}
 
@@ -1293,34 +1221,6 @@ func getDevMounts(ctx context.Context,
 	return devMnts, nil
 }
 
-func getSystemUUID(ctx context.Context) (string, error) {
-	log := logger.GetLogger(ctx)
-	idb, err := ioutil.ReadFile(path.Join(dmiDir, "id", "product_uuid"))
-	if err != nil {
-		return "", err
-	}
-	log.Debugf("uuid in bytes: %v", idb)
-	id := strings.TrimSpace(string(idb))
-	log.Debugf("uuid in string: %s", id)
-	return strings.ToLower(id), nil
-}
-
-// convertUUID helps convert UUID to vSphere format
-//input uuid:    6B8C2042-0DD1-D037-156F-435F999D94C1
-//returned uuid: 42208c6b-d10d-37d0-156f-435f999d94c1
-func convertUUID(uuid string) (string, error) {
-	if len(uuid) != 36 {
-		return "", errors.New("uuid length should be 36")
-	}
-	convertedUUID := fmt.Sprintf("%s%s%s%s-%s%s-%s%s-%s-%s",
-		uuid[6:8], uuid[4:6], uuid[2:4], uuid[0:2],
-		uuid[11:13], uuid[9:11],
-		uuid[16:18], uuid[14:16],
-		uuid[19:23],
-		uuid[24:36])
-	return strings.ToLower(convertedUUID), nil
-}
-
 func getDiskID(pubCtx map[string]string) (string, error) {
 	var diskID string
 	var ok bool
@@ -1378,4 +1278,32 @@ func getDevFromMount(target string) (*Device, error) {
 
 	// Did not identify a device mounted to target
 	return nil, nil
+}
+
+// getTopologyFromK8sNode gathers topology labels from the kubernetes node object.
+// The topolopy labels are written by the cloud-controller-manager.
+func getTopologyFromK8sNode(ctx context.Context, nodeName string) (string, string, error) {
+	log := logger.GetLogger(ctx)
+
+	k8sclient, err := k8s.NewClient(ctx)
+	if err != nil {
+		log.Errorf("Creating Kubernetes client failed. Err: %v", err)
+		return "", "", err
+	}
+	node, err := k8sclient.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+	if err != nil {
+		return "", "", err
+	}
+	labels := node.GetLabels()
+
+	region, ok := labels[v1.LabelZoneRegionStable]
+	if !ok {
+		region = labels[v1.LabelZoneRegion]
+	}
+	zone, ok := labels[v1.LabelZoneFailureDomainStable]
+	if !ok {
+		zone = labels[v1.LabelZoneRegion]
+	}
+
+	return region, zone, nil
 }
