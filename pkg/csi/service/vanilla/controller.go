@@ -26,6 +26,7 @@ import (
 
 	"github.com/vmware/govmomi/cns"
 
+	cnsnode "sigs.k8s.io/vsphere-csi-driver/pkg/common/cns-lib/node"
 	"sigs.k8s.io/vsphere-csi-driver/pkg/csi/service/logger"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -565,6 +566,10 @@ func (c *controller) ControllerUnpublishVolume(ctx context.Context, req *csi.Con
 	if queryResult.Volumes[0].VolumeType != common.FileVolumeType {
 		node, err := c.nodeMgr.GetNodeByName(ctx, req.NodeId)
 		if err != nil {
+			if err == cnsnode.ErrNodeNotFound {
+				// node is not existing anymore
+				return &csi.ControllerUnpublishVolumeResponse{}, nil
+			}
 			msg := fmt.Sprintf("failed to find VirtualMachine for node:%q. Error: %v", req.NodeId, err)
 			log.Error(msg)
 			return nil, status.Error(codes.Internal, msg)
