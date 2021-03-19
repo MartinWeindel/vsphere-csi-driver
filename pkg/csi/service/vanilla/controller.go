@@ -886,10 +886,14 @@ func (c *controller) ControllerUnpublishVolume(ctx context.Context, req *csi.Con
 		node, err := c.nodeMgr.GetNodeByName(ctx, req.NodeId)
 		if err != nil {
 			if err == cnsnode.ErrNodeNotFound {
-				// node is not existing anymore
-				return &csi.ControllerUnpublishVolumeResponse{}, nil
+				// Node is not existing anymore, we need to check if its VM is still existing.
+				// As the VM UUID is not known anymore, need to search by using NodeID as DNS Name
+				_, err = cnsvsphere.GetVirtualMachineByDNSName(ctx, req.NodeId)
+				if err == cnsvsphere.ErrVMNotFound {
+					return &csi.ControllerUnpublishVolumeResponse{}, nil
+				}
 			}
-			msg := fmt.Sprintf("failed to find VirtualMachine for node:%q. Error: %v", req.NodeId, err)
+			msg := fmt.Sprintf("failed to find VirtualMachine for node: %q. Error: %v", req.NodeId, err)
 			log.Error(msg)
 			return nil, status.Error(codes.Internal, msg)
 		}
